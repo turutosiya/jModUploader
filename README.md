@@ -4,15 +4,19 @@ jModUploader
 About
 ---------------
 
-jQuery plug-in as a frontend of[mod_uploader](http://en.sourceforge.jp/projects/mod-uploader/).
+jQuery plug-in as a frontend of [mod_uploader](http://en.sourceforge.jp/projects/mod-uploader/).
 
 Usage
 ---------------
+
+### HTML
 
     <form id="jModUploaderForm" ...>
     	<input type="file">
     	<input type="submit">
     </form>
+
+### JavaScript
 
     /**
      * jModUploader
