@@ -2,9 +2,10 @@
  * jModUploader.js
  *
  * jQuery plugin which integrated with mod_uploader 
- *
- * @author       Toshiya TSURU <t_tsuru@sunbi.co.jp>
- * @author       Toshiya TSURU <t_tsuru@sunbi.co.jp>
+ * 
+ * @author       Toshiya TSURU <turutosiya@gmail.com>
+ * @author       Qiang Lu
+ * @author       Li
  * 
  */
 (function($){
