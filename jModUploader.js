@@ -1,11 +1,11 @@
 /**
  * jModUploader.js
  *
- * jQuery plugin which integrated with mod_uploader 
+ * A jQuery plugin which integrated with mod_uploader 
  * 
  * @author       Toshiya TSURU <turutosiya@gmail.com>
- * @author       Qiang Lu
- * @author       Li
+ * @author       Qiang Lu <lvqiang@xuzhousoft.com>
+ * @author       Li <liwenguang@xuzhousoft.com>
  * 
  */
 (function($){
@@ -21,7 +21,7 @@
 	 * @param totalSize
 	 * @param readSize
 	 * @param startTime
-	 * @returns
+	 * @returns  object
 	 */
 	var Progress = function (status, total, uploaded, begin) {
 		trace('Progress(\'' + status + '\', ' +  total + ', ' +  uploaded + ', ' + begin + ')');
@@ -158,8 +158,10 @@
 			// create iframe
 			var _$iframe = $('<iframe>')
 				.attr('id', 'JMODUPLOADER_TARGET_IFRAME_' + _$this.uploadId)
+				.attr('name', 'backup-upload-frame')
 				.attr('data-upload-id', _$this.uploadId)
 				.appendTo('body')
+				.hide()
 				.load(function(evt){
 					_$this.isIframeLoaded = true;
 				});
@@ -178,7 +180,7 @@
 			// force "enctype" attribute to 'multipart/form-data'
 			_$this.attr('enctype', 'multipart/form-data');
 			_$this.attr('action',  _$this._buildUrl('upload'));
-			_$this.attr('target',  _$this.iframe.attr('id'));
+			_$this.attr('target',  _$this.iframe.attr('name'));
 			// return
 			return _$this;
 		},
@@ -225,18 +227,22 @@
 			_$this.begin  = (new Date()).getTime();
 			// set loadede flag FALSE
 			_$this.isIframeLoaded = false;
-			// create progress bar
-			$('<div>')
-				.attr('class', 'jmoduploader-progress-container')
-				.attr('style', 'width:100%;')
-				.append($('<div>')
-					.attr('class', 'jmoduploader-progress-label')
-					.text('Starting'))
-				.append($('<div>')
-					.attr('class', 'jmoduploader-progress-bar')
-					.attr('style', 'width:0%;')
-					.text('-'))
-				.appendTo(_$this);
+			// create progress bar, but if it already existed，just use it.
+			if ( 0 == $('.jmoduploader-progress-container').length ){
+				$('<div>')
+					.attr('class', 'jmoduploader-progress-container')
+					.attr('style', 'width:100%;')
+					.append($('<div>')
+						.attr('class', 'jmoduploader-progress-label')
+						.text('Starting'))
+					.append($('<div>')
+						.attr('class', 'progress progress-info progress-striped')
+						.append($('<div>')
+							.attr('class', 'bar')
+							.css('width', '0%')))
+					.appendTo(_$this);
+			}
+			
 			// _pollProgress
 			setTimeout(function() {
 				// execute polling
@@ -291,10 +297,11 @@
 						// update ui
 						_$this._updateUI();
 						// settimeout next polling
-						setTimeout(function(){ _$this._pollProgress(); }, _$this.updateInterval);
-					}else{
-						_$this._onAfterSubmit();
-					}
+						//setTimeout(function(){ _$this._pollProgress(); }, _$this.updateInterval);
+					}//else{
+					//	_$this._onAfterSubmit();
+					//}
+					_$this._onAfterSubmit();
 					break;
 				default:
 					// update ui
@@ -326,9 +333,10 @@
 			// keep this
 			var _$this   = this;
 			// update
-			_$this.find('.jmoduploader-progress-bar')
+			_$this.find('.bar')
 				.attr('style', 'width:' + _$this.progress.percentage + '%')
 				.text(_$this.progress.percentage + ' %');
+			
 			_$this.find('.jmoduploader-progress-label')
 				.text(
 					'あと ' +  _$this._formatMilliSec(_$this.progress.takes) + 
@@ -404,17 +412,33 @@
 			var _$this    = this;
 			// call handler
 			if('function' == typeof _$this.success) {
-				var _$a    = _$this.iframe.find("a[href~='/download/']");
 				var _data  = {
 					uploadId:    _$this.uploadId,
 					begin:       _$this.begin,
 					finish:      (new Date()).getTime(),
-					// downloadUrl: _$a.attr('href'),
+					size : 		_$this.progress.total,
+					savedFileName: _$this._getSavedFileName()
 				};
 				_$this.success(_data);
 			}
 			return _$this;
 		},
+		
+		_getSavedFileName:function(){
+			var downloadLink;
+			while (true){
+				downloadLink = $(window.frames['backup-upload-frame'].document).find('a[href*=download]').attr('href');
+				if ( 'undefined' != typeof(downloadLink) )
+					break;
+			}
+			
+			var fileName = downloadLink.replace(/http:\/\//g, '')
+				.replace(window.location.host, '')
+				.replace(/\/uploader\/download\//, '');
+			
+			return fileName;
+		},
+		
 		/**
 		 * _onError
 		 */
