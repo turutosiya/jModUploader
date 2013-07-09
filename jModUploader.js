@@ -34,6 +34,11 @@
 		this.elapsed     = (this.begin < 0) ?                         -1 : (new Date()).getTime() - this.begin;
 		this.bps         = (this.uploaded < 0 || this.elapsed <= 0) ? -1 : (this.uploaded / (this.elapsed / 1000)) * 8 /* bytes to bits */;
 		this.takes       = (this.bps < 0) ?                           -1 : (this.total - this.uploaded) / (this.bps / 8)  * 1000 /* sec to millisec */;
+		this.errorMessage = $("iframe[name='backup-upload-frame']").contents().find('#error_message').html();
+		
+		if ( 'undefined' != typeof(this.errorMessage) )
+			this.status = Progress.STATUS_ERROR;
+			
 		return this;
 	};
 	/**
@@ -41,7 +46,8 @@
 	 */
 	Progress.STATUS_SUCCESS  = 'S';
 	Progress.STATUS_PROGRESS = 's';
-	Progress.STATUS_FAILURE  = 'u';
+	// http://redmine.nadai.jp/issues/315
+	Progress.STATUS_UNKNOWN  = 'u';
 	Progress.STATUS_ERROR    = 'E';
 	/**
 	 * parse
@@ -70,7 +76,7 @@
 	/**
 	 * 
 	 */
-	var DEFAULT_UPDATE_INTEVAL = 250;
+	var DEFAULT_UPDATE_INTEVAL = 400;
 	$.fn.extend({
 		/**
 		 * jModUploader
@@ -96,8 +102,6 @@
 			_$this
 				._loadConfig(config)
 				._detectUploadId()
-				._createTargetIframe()
-				._prepareThisForm()
 				._hookSubmit();
 			// return
 			return _$this;
@@ -122,16 +126,16 @@
 				_$this.beforeUpload = config.beforeUpload;
 			}
 			// 
-			if('function'     == typeof config.progress) {
-				_$this.progress = config.progress;
+			if('function'         == typeof config.progress) {
+				_$this.progress     = config.progress;
 			}
 			// 
-			if('function'     == typeof config.success) {
-				_$this.success  = config.success;
+			if('function'         == typeof config.success) {
+				_$this.success      = config.success;
 			}
 			// 
-			if('function'     == typeof config.error) {
-				_$this.error    = config.error;
+			if('function'         == typeof config.error) {
+				_$this.error        = config.error;
 			}
 			// return
 			return _$this;
@@ -142,9 +146,9 @@
 		_detectUploadId: function() {
 			trace('_detectUploadId()');
 			// keep this
-			var _$this   = this;
+			var _$this            = this;
 			// random upload_id
-			_$this.uploadId = Math.floor(Math.random() * (Math.pow(2, 32) - 1)) + 1;
+			_$this.uploadId       = Math.floor(Math.random() * (Math.pow(2, 32) - 1)) + 1;
 			// return
 			return _$this;
 		},
@@ -221,36 +225,35 @@
 		 */
 		_onBeforeSubmit: function() {
 			trace('_onBeforeSubmit()');
-		// keep this
+			// keep this
 			var _$this   = this;
+			
+			if ( 1 == $("iframe[name='backup-upload-frame']").length )
+				$("iframe[name='backup-upload-frame']").remove();
+				
+			_$this._createTargetIframe();
+			_$this._prepareThisForm();
+				
 			// keep begin time
-			_$this.begin  = (new Date()).getTime();
+			_$this.begin          = (new Date()).getTime();
 			// set loadede flag FALSE
 			_$this.isIframeLoaded = false;
-			// create progress bar, but if it already existed，just use it.
-			if ( 0 == $('.jmoduploader-progress-container').length ){
-				$('<div>')
-					.attr('class', 'jmoduploader-progress-container')
-					.attr('style', 'width:100%;')
-					.append($('<div>')
-						.attr('class', 'jmoduploader-progress-label')
-						.text('Starting'))
-					.append($('<div>')
-						.attr('class', 'progress progress-info progress-striped')
-						.append($('<div>')
-							.attr('class', 'bar')
-							.css('width', '0%')))
-					.appendTo(_$this);
-			}
-			
-			// _pollProgress
-			setTimeout(function() {
-				// execute polling
-				_$this._pollProgress();
-			}, 500);
-			// call handler
-			if('function' == typeof _$this.beforeUpload) {
-				_$this.beforeUpload();
+			// get uploading filename
+			var _fileName = $('input[type="file"]', _$this).val();
+			_fileName     = (_fileName) ? _fileName.substr(_fileName.lastIndexOf('\\')+1) : null;
+			if (_fileName != null) {
+				// call handler
+				if('function' == typeof _$this.beforeUpload) {
+					// call event
+					_$this.beforeUpload({
+						"fileName": _fileName
+					});
+				}
+				// _pollProgress
+				setTimeout(function() {
+					// execute polling
+					_$this._pollProgress();
+				}, _$this.updateInterval);
 			}
 			// return
 			return _$this;
@@ -265,6 +268,7 @@
 			// call mod_uploeader's progress_data command
 			$.ajax({
 				url:      _$this._buildUrl('progress'),
+				type:     "post",
 				success:  function(data){ 
 					_$this._onProgress(Progress.parse(data, _$this.begin));
 				},
@@ -282,37 +286,27 @@
 		_onProgress: function(progress) {
 			trace('_onProgress()');
 			// keep this
-			var _$this   = this;
+			var _$this          = this;
 			// update progress property
-			_$this.progress = progress;
+			_$this.progressData = progress;
 			//  switch by the case
 			switch(_$this._getProgressStatus()) {
 				case Progress.STATUS_SUCCESS:
 					// call _onAfterSubmit
 					_$this._onAfterSubmit();
 					break;
-				case Progress.STATUS_FAILURE:
+				// case Progress.STATUS_UNKNOWN: // keep trying polling when STATUS_UNKNOWN('u') @see http://redmine.nadai.jp/issues/315
 				case Progress.STATUS_ERROR:
-					if(!_$this.isIframeLoaded) {
-						// update ui
-						_$this._updateUI();
-						// settimeout next polling
-						//setTimeout(function(){ _$this._pollProgress(); }, _$this.updateInterval);
-					}//else{
-					//	_$this._onAfterSubmit();
-					//}
 					_$this._onAfterSubmit();
 					break;
 				default:
-					// update ui
-					_$this._updateUI();
+					// call handler
+					if('function' == typeof _$this.progress) {
+						_$this.progress(progress);
+					}
 					// settimeout next polling
 					setTimeout(function(){ _$this._pollProgress(); }, _$this.updateInterval);
 					break;
-			}
-			// call handler
-			if('function' == typeof _$this.progress) {
-				_$this.progress();
 			}
 			// return
 			return _$this;
@@ -323,72 +317,14 @@
 		_getProgressStatus: function() {
 			trace('_getProgressStatus()');
 			
-			return ('undefined' == typeof this.progress) ? '' : this.progress.status;
-		},
-		/**
-		 * _updateUI
-		 */
-		_updateUI: function() {
-			trace('_updateUI()');
-			// keep this
-			var _$this   = this;
-			// update
-			_$this.find('.bar')
-				.attr('style', 'width:' + _$this.progress.percentage + '%')
-				.text(_$this.progress.percentage + ' %');
-			
-			_$this.find('.jmoduploader-progress-label')
-				.text(
-					'あと ' +  _$this._formatMilliSec(_$this.progress.takes) + 
-					' (' + 
-						_$this._formatBytes(_$this.progress.uploaded) + 'B / ' + _$this._formatBytes(_$this.progress.total) + 'B' + 
-						' @ ' +
-						_$this._formatBytes(_$this.progress.bps) + ' bps' +
-						')');
-			// return
-			return _$this;
-		},
-		/**
-		 * _formatBytes
-		 */
-		_formatBytes: function(bytes) {
-			trace('_formatBytes(' + bytes + ')');
-			
-			if(bytes < 0) return '-';
-			
-			var _units = ['', ' K', ' M', ' G'];
-			while(bytes > 1024){ 
-				_units.shift();
-				bytes /= 1024;
-			}
-			
-			return (Math.round(bytes * 10) / 10).toFixed(1) + _units[0];
-		},
-		/**
-		 * 
-		 * @returns {String}
-		 */
-		_formatMilliSec: function(milliSec) {
-			trace('_formatMilliSec(' + milliSec + ')');
-			
-			if (isNaN(milliSec) || milliSec < 0) {
-				return '--:--:--';
-			}
-			
-			var _sec = milliSec / 1000;
-			
-			var _time = [
-			             parseInt(_sec / 60 / 60),
-			             parseInt(_sec / 60) % 60, 
-			             parseInt(_sec % 60)
-			            ];
-			return _time.join(":").replace(/\b(\d)\b/g, "0$1");
+			return ('undefined' == typeof this.progressData) ? '' : this.progressData.status;
 		},
 		/**
 		 * _onAfterSubmit
 		 */
 		_onAfterSubmit: function() {
 			trace('_onAfterSubmit()');
+			
 			// keep this
 			var _$this   = this;
 			// switch by the case
@@ -396,7 +332,7 @@
 				case Progress.STATUS_SUCCESS: 
 					_$this._onSuccess();
 					break;
-				case Progress.STATUS_FAILURE:
+				case Progress.STATUS_UNKNOWN:
 				case Progress.STATUS_ERROR:
 					_$this._onError(); 
 					break;
@@ -408,37 +344,61 @@
 		 */
 		_onSuccess: function() {
 			trace('_onSuccess()');
+			
 			// keep this
-			var _$this    = this;
+			var _$this           = this;
+			var _finish          = (new Date()).getTime();
 			// call handler
 			if('function' == typeof _$this.success) {
-				var _data  = {
-					uploadId:    _$this.uploadId,
-					begin:       _$this.begin,
-					finish:      (new Date()).getTime(),
-					size : 		_$this.progress.total,
-					savedFileName: _$this._getSavedFileName()
-				};
-				_$this.success(_data);
+				var _downloadUrl   = false;
+				(function(){
+					var _callee      = arguments.callee;
+					// get download url from hidden iframe
+					_downloadUrl     = _$this._getDownloadUrl();
+					if (_downloadUrl == false) {
+						// if we can not get the url, retry
+						window.setTimeout(_callee, _$this.updateInterval);
+					} else {
+						// callback
+						_$this.success({
+							uploadId:    _$this.uploadId,
+							begin:       _$this.begin,
+							finish:      _finish,
+							size : 		   _$this.progressData.total,
+							downloadUrl: _downloadUrl,
+							fileName:    _$this._extractFileNameFromUrl(_downloadUrl)
+						});
+					}
+				})();
 			}
+			
 			return _$this;
 		},
-		
-		_getSavedFileName:function(){
-			var downloadLink;
-			while (true){
-				downloadLink = $(window.frames['backup-upload-frame'].document).find('a[href*=download]').attr('href');
-				if ( 'undefined' != typeof(downloadLink) )
-					break;
-			}
+		/**
+		 * _getDownloadUrl
+		 */
+		_getDownloadUrl:      function(){
+			trace('_getDownloadUrl()');
 			
-			var fileName = downloadLink.replace(/http:\/\//g, '')
-				.replace(window.location.host, '')
-				.replace(/\/uploader\/download\//, '');
+			var _downloadUrl;
+			_downloadUrl        = $("iframe[name='backup-upload-frame']");
+			_downloadUrl        = _downloadUrl.contents();
+			_downloadUrl        = _downloadUrl.find('a[href*=download]');
+			_downloadUrl        = _downloadUrl.attr('href');
 			
-			return fileName;
+			return ('undefined' == typeof(_downloadUrl)) ? false : _downloadUrl;
 		},
-		
+		/**
+		 * _extractFileNameFromUrl
+		 * @returns
+		 */
+		_extractFileNameFromUrl: function(url){
+			trace('_extractFileNameFromUrl("' + url + '")');
+			var _a = document.createElement('a');
+			_a.href = url;
+			var _fileName = _a.pathname.split('/').pop();
+			return _fileName;
+		},
 		/**
 		 * _onError
 		 */
@@ -446,13 +406,12 @@
 			trace('_onError()');
 			// keep this
 			var _$this    = this;
-			// 
-			_$this.find('.jmoduploader-progress-label')
-				.text('ERROR');
 			// call handler
 			if('function' == typeof _$this.error) {
-				_$this.error();
+				var message = (_$this.progressData.errorMessage) ? _$this.progressData.errorMessage.replace(/_/g, ' ').replace(/MESSAGE /g, '') : "";
+				_$this.error({message:message});
 			}
+			// return 
 			return _$this;
 		}
   });
