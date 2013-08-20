@@ -196,8 +196,8 @@
 			// keep this
 			var _$this   = this;
 			// set submit handler
-			_$this.submit(function(evt){
-				_$this._onBeforeSubmit();
+			_$this.submit(function(evt){	
+				return _$this._onBeforeSubmit();
 			});
 			// return
 			return _$this;
@@ -245,9 +245,10 @@
 				// call handler
 				if('function' == typeof _$this.beforeUpload) {
 					// call event
-					_$this.beforeUpload({
-						"fileName": _fileName
-					});
+					var passedBeforeUploadAction =_$this.beforeUpload({"fileName": _fileName});
+					if ( 'undefined' != typeof passedBeforeUploadAction && !passedBeforeUploadAction ) {
+						return false;
+					}
 				}
 				// _pollProgress
 				setTimeout(function() {
